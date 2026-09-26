@@ -10,6 +10,7 @@ Distributed under the MIT License included with this repository.
 """
 
 from __future__ import annotations
+
 from block_backend import BlockManager
 
 import json
@@ -267,7 +268,9 @@ def manage_device_names(
         return
 
     if device.mac == "unknown":
-        print(f"\n{YELLOW}That device has no usable MAC address, so its name cannot be saved reliably.{END}\n")
+        print(
+            f"\n{YELLOW}That device has no usable MAC address, so its name cannot be saved reliably.{END}\n"
+        )
         return
 
     current = device.custom_name or display_name(device)
@@ -371,36 +374,36 @@ def main() -> None:
 
         elif choice == "3":
             print_devices(devices, info)
-        
+
             raw = input(
                 f"{BLUE}Enter device number, or press Enter to cancel{WHITE}> {END}"
             ).strip()
-        
+
             if not raw:
                 continue
-        
+
             try:
                 index = int(raw) - 1
                 device = devices[index]
             except (ValueError, IndexError):
                 print(f"\n{RED}ERROR: Invalid device number.{END}\n")
                 continue
-        
+
             valid, reason = block_manager.validate_target(device, info)
-        
+
             if not valid:
                 print(f"\n{RED}{reason}{END}\n")
                 continue
-        
+
             success, message = block_manager.block(device, info)
-        
+
             if success:
                 print(f"\n{GREEN}{message}{END}\n")
             else:
                 print(f"\n{RED}{message}{END}\n")
 
-elif choice in {"4", "5", "6", "7", "8"}:
-    print(f"\n{YELLOW}That feature is planned for the next milestone.{END}\n")
+        elif choice in {"4", "5", "6", "7", "8"}:
+            print(f"\n{YELLOW}That feature is planned for the next milestone.{END}\n")
 
         elif choice in {"0", "e", "exit", "q", "quit"}:
             print(f"\n{GREEN}Thanks for dropping by. Catch ya later!{END}\n")
