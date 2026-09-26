@@ -7,17 +7,16 @@ Copyright (C) 2017-18 Nikolaos Kamarinakis & David Schütz
 Modernization work Copyright (C) 2026 contributors to this fork.
 
 Distributed under the MIT License included with this repository.
-
-This first milestone modernizes local network discovery and device rescanning.
-The original kickthemout.py remains untouched while this entry point is tested.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from time import sleep
 
 import scan
@@ -32,6 +31,8 @@ MAGENTA = "\033[1;35m"
 GREEN = "\033[1;32m"
 END = "\033[0m"
 
+DEVICE_NAMES_FILE = Path(__file__).with_name("device_names.json")
+
 
 @dataclass
 class Device:
@@ -40,6 +41,7 @@ class Device:
     name: str = "Unknown"
     vendor: str = ""
     protected: bool = False
+    custom_name: str = ""
 
 
 def require_root() -> None:
@@ -69,7 +71,33 @@ def heading() -> None:
         + "\n"
         + f"{YELLOW}Modern Linux Fork ({RED}KickThemOut{YELLOW}){BLUE}".center(98)
         + "\n"
-        + f"Version: {YELLOW}0.3-dev{END}\n".center(86)
+        + f"Version: {YELLOW}0.4-dev{END}\n".center(86)
+    )
+
+
+def load_custom_names() -> dict[str, str]:
+    if not DEVICE_NAMES_FILE.exists():
+        return {}
+
+    try:
+        data = json.loads(DEVICE_NAMES_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {
+        str(mac).lower(): str(name).strip()
+        for mac, name in data.items()
+        if str(mac).strip() and str(name).strip()
+    }
+
+
+def save_custom_names(names: dict[str, str]) -> None:
+    DEVICE_NAMES_FILE.write_text(
+        json.dumps(dict(sorted(names.items())), indent=2) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -82,7 +110,7 @@ def print_network(info: NetworkInfo) -> None:
     print(f"\t{WHITE}Subnet    : {GREEN}{info.subnet}{END}\n")
 
 
-def discover_devices(info: NetworkInfo) -> list[Device]:
+def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[Device]:
     print(f"{GREEN}Scanning your network, hang on...{END}")
 
     devices_by_ip: dict[str, Device] = {}
@@ -92,6 +120,7 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
         mac=info.mac,
         name=socket.gethostname() or "This Computer",
         protected=True,
+        custom_name=custom_names.get(info.mac.lower(), ""),
     )
 
     raw_devices = scan.scanNetwork(info.subnet)
@@ -106,6 +135,7 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
         vendor = str(item[3]).strip() if len(item) > 3 and item[3] else ""
         name = hostname or vendor or "Unknown"
         protected = ip in {info.local_ip, info.gateway} or mac == info.mac
+        custom_name = custom_names.get(mac, "") if mac != "unknown" else ""
 
         existing = devices_by_ip.get(ip)
         if existing:
@@ -115,6 +145,8 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
                 existing.name = name
             if not existing.vendor and vendor:
                 existing.vendor = vendor
+            if not existing.custom_name and custom_name:
+                existing.custom_name = custom_name
             existing.protected = existing.protected or protected
         else:
             devices_by_ip[ip] = Device(
@@ -123,6 +155,7 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
                 name=name,
                 vendor=vendor,
                 protected=protected,
+                custom_name=custom_name,
             )
 
     if info.gateway not in devices_by_ip:
@@ -133,14 +166,31 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
             protected=True,
         )
     else:
-        devices_by_ip[info.gateway].protected = True
-        if devices_by_ip[info.gateway].name == "Unknown":
-            devices_by_ip[info.gateway].name = "Gateway"
+        gateway = devices_by_ip[info.gateway]
+        gateway.protected = True
+        if gateway.name == "Unknown":
+            gateway.name = "Gateway"
+        if gateway.mac != "unknown":
+            gateway.custom_name = custom_names.get(gateway.mac, gateway.custom_name)
 
     devices = list(devices_by_ip.values())
     devices.sort(key=lambda d: tuple(int(part) for part in d.ip.split(".")))
     print(f"{GREEN}Scan complete. {len(devices)} device(s) found.{END}\n")
     return devices
+
+
+def display_name(device: Device) -> str:
+    if device.custom_name:
+        detected = device.name
+        if device.vendor and device.vendor.lower() != detected.lower():
+            detected = f"{detected} / {device.vendor}"
+        if detected and detected != "Unknown":
+            return f"{device.custom_name} ({detected})"
+        return device.custom_name
+
+    if device.vendor and device.vendor.lower() != device.name.lower():
+        return f"{device.name} ({device.vendor})"
+    return device.name
 
 
 def print_devices(devices: list[Device], info: NetworkInfo) -> None:
@@ -161,15 +211,56 @@ def print_devices(devices: list[Device], info: NetworkInfo) -> None:
             labels.append("PROTECTED")
 
         suffix = f" {YELLOW}[{' / '.join(labels)}]{END}" if labels else ""
-        display_name = device.name
-        if device.vendor and device.vendor.lower() != device.name.lower():
-            display_name = f"{device.name} ({device.vendor})"
-
         print(
             f"\t{YELLOW}[{RED}{index}{YELLOW}]{WHITE} "
-            f"{device.ip:<16} {device.mac:<19} {display_name}{suffix}"
+            f"{device.ip:<16} {device.mac:<19} {display_name(device)}{suffix}"
         )
     print(END)
+
+
+def manage_device_names(
+    devices: list[Device], info: NetworkInfo, custom_names: dict[str, str]
+) -> None:
+    usable = [device for device in devices if device.mac != "unknown"]
+    if not usable:
+        print(f"\n{YELLOW}No devices with usable MAC addresses are available.{END}\n")
+        return
+
+    print_devices(devices, info)
+    raw = input(
+        f"{BLUE}Enter device number to rename, or press Enter to cancel{WHITE}> {END}"
+    ).strip()
+    if not raw:
+        return
+
+    try:
+        index = int(raw) - 1
+        device = devices[index]
+    except (ValueError, IndexError):
+        print(f"\n{RED}ERROR: Invalid device number.{END}\n")
+        return
+
+    if device.mac == "unknown":
+        print(f"\n{YELLOW}That device has no usable MAC address, so its name cannot be saved reliably.{END}\n")
+        return
+
+    current = device.custom_name or display_name(device)
+    print(f"\n{WHITE}Selected: {GREEN}{device.ip}  {device.mac}  {current}{END}")
+    new_name = input(
+        f"{BLUE}New custom name (blank removes saved name){WHITE}> {END}"
+    ).strip()
+
+    mac = device.mac.lower()
+    if new_name:
+        custom_names[mac] = new_name
+        device.custom_name = new_name
+        save_custom_names(custom_names)
+        print(f"\n{GREEN}Saved device name: {new_name}{END}\n")
+    else:
+        custom_names.pop(mac, None)
+        device.custom_name = ""
+        save_custom_names(custom_names)
+        print(f"\n{GREEN}Saved custom name removed.{END}\n")
 
 
 def option_banner() -> None:
@@ -183,6 +274,7 @@ def option_banner() -> None:
     print(f"\t{YELLOW}[{RED}6{YELLOW}]{WHITE} View Blocked Devices {YELLOW}[coming next]{WHITE}")
     print(f"\t{YELLOW}[{RED}7{YELLOW}]{WHITE} Restore Device {YELLOW}[coming next]{WHITE}")
     print(f"\t{YELLOW}[{RED}8{YELLOW}]{WHITE} Restore All {YELLOW}[coming next]{WHITE}")
+    print(f"\t{YELLOW}[{RED}9{YELLOW}]{WHITE} Manage Saved Device Names")
     print(f"\n\t{YELLOW}[{RED}0{YELLOW}]{WHITE} Exit\n")
 
 
@@ -193,6 +285,7 @@ def prompt() -> str:
 def main() -> None:
     require_root()
     heading()
+    custom_names = load_custom_names()
 
     try:
         info = detect_network()
@@ -203,7 +296,7 @@ def main() -> None:
     print_network(info)
 
     try:
-        devices = discover_devices(info)
+        devices = discover_devices(info, custom_names)
     except Exception as exc:
         print(f"{RED}ERROR: Network scanning failed: {GREEN}{exc}{END}\n")
         devices = [
@@ -213,6 +306,7 @@ def main() -> None:
                 mac=info.mac,
                 name=socket.gethostname() or "This Computer",
                 protected=True,
+                custom_name=custom_names.get(info.mac.lower(), ""),
             ),
         ]
 
@@ -223,14 +317,18 @@ def main() -> None:
         if choice == "1":
             try:
                 info = detect_network()
+                custom_names = load_custom_names()
                 print_network(info)
-                devices = discover_devices(info)
+                devices = discover_devices(info, custom_names)
                 print_devices(devices, info)
             except Exception as exc:
                 print(f"\n{RED}ERROR: Rescan failed: {GREEN}{exc}{END}\n")
 
         elif choice == "2":
             print_devices(devices, info)
+
+        elif choice == "9":
+            manage_device_names(devices, info, custom_names)
 
         elif choice in {"3", "4", "5", "6", "7", "8"}:
             print(f"\n{YELLOW}That feature is planned for the next milestone.{END}\n")
