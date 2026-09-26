@@ -66,7 +66,7 @@ def heading() -> None:
         + "\n"
         + f"{YELLOW}Modern Linux Fork ({RED}KickThemOut{YELLOW}){BLUE}".center(98)
         + "\n"
-        + f"Version: {YELLOW}0.1-dev{END}\n".center(86)
+        + f"Version: {YELLOW}0.2-dev{END}\n".center(86)
     )
 
 
@@ -81,16 +81,48 @@ def print_network(info: NetworkInfo) -> None:
 
 def discover_devices(info: NetworkInfo) -> list[Device]:
     print(f"{GREEN}Scanning your network, hang on...{END}")
+
+    devices_by_ip: dict[str, Device] = {}
+
+    # Always include this computer, even if Nmap omits a MAC address for it.
+    devices_by_ip[info.local_ip] = Device(
+        ip=info.local_ip,
+        mac=info.mac,
+        protected=True,
+    )
+
     raw_devices = scan.scanNetwork(info.subnet)
-    devices: list[Device] = []
 
     for item in raw_devices:
-        if len(item) < 2:
+        if not item:
             continue
-        ip, mac = str(item[0]), str(item[1]).lower()
+        ip = str(item[0])
+        mac = str(item[1]).lower() if len(item) > 1 and item[1] else "unknown"
         protected = ip in {info.local_ip, info.gateway} or mac == info.mac
-        devices.append(Device(ip=ip, mac=mac, protected=protected))
 
+        existing = devices_by_ip.get(ip)
+        if existing:
+            # Prefer a discovered MAC over an unknown placeholder, but never
+            # remove protection from the gateway or this computer.
+            if existing.mac == "unknown" and mac != "unknown":
+                existing.mac = mac
+            existing.protected = existing.protected or protected
+        else:
+            devices_by_ip[ip] = Device(ip=ip, mac=mac, protected=protected)
+
+    # Always include the gateway and clearly mark it as protected. If the scan
+    # found its MAC address, keep it; otherwise show "unknown" instead of
+    # hiding the gateway from the device list.
+    if info.gateway not in devices_by_ip:
+        devices_by_ip[info.gateway] = Device(
+            ip=info.gateway,
+            mac="unknown",
+            protected=True,
+        )
+    else:
+        devices_by_ip[info.gateway].protected = True
+
+    devices = list(devices_by_ip.values())
     devices.sort(key=lambda d: tuple(int(part) for part in d.ip.split(".")))
     print(f"{GREEN}Scan complete. {len(devices)} device(s) found.{END}\n")
     return devices
@@ -152,7 +184,10 @@ def main() -> None:
         devices = discover_devices(info)
     except Exception as exc:
         print(f"{RED}ERROR: Network scanning failed: {GREEN}{exc}{END}\n")
-        devices = []
+        devices = [
+            Device(ip=info.gateway, mac="unknown", protected=True),
+            Device(ip=info.local_ip, mac=info.mac, protected=True),
+        ]
 
     while True:
         option_banner()
