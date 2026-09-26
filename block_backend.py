@@ -64,7 +64,7 @@ class BlockBackend:
             spoof.sendPacket(defaultGatewayMac, defaultGatewayIP, host[0], host[1])
         except KeyboardInterrupt:
             pass
-        except:
+        except Exception:
             runDebug()
                 reArp += 1
                 time.sleep(0.2)
