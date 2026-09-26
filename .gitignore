@@ -26,3 +26,5 @@ ENV/
 *.bak
 *.cfg
 __pycache__/
+.venv/
+device_names.json
