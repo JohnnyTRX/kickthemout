@@ -60,15 +60,16 @@ class BlockBackend:
         sendp(x=packet, verbose=False)
 
     def restore(self, *, ip: str, mac: str) -> None:
-        spoof.sendPacket(defaultGatewayMac, defaultGatewayIP, host[0], host[1])
-            except KeyboardInterrupt:
+        try:
+            spoof.sendPacket(defaultGatewayMac, defaultGatewayIP, host[0], host[1])
+        except KeyboardInterrupt:
             pass
-            except:
-                runDebug()
-            reArp += 1
-            time.sleep(0.2)
-        print("{}Re-arped{} target successfully.{}".format(RED, GREEN, END))
-        
+        except:
+            runDebug()
+                reArp += 1
+                time.sleep(0.2)
+            print("{}Re-arped{} target successfully.{}".format(RED, GREEN, END))
+            
         raise NotImplementedError(
             "No network blocking backend is configured."
         )
