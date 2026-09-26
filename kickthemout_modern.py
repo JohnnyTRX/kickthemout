@@ -20,6 +20,7 @@ from pathlib import Path
 from time import sleep
 
 import scan
+from device_resolver import resolve_device_name
 from network_info import NetworkDiscoveryError, NetworkInfo, detect_network
 
 
@@ -42,6 +43,7 @@ class Device:
     vendor: str = ""
     protected: bool = False
     custom_name: str = ""
+    name_source: str = "unknown"
 
 
 def require_root() -> None:
@@ -71,7 +73,7 @@ def heading() -> None:
         + "\n"
         + f"{YELLOW}Modern Linux Fork ({RED}KickThemOut{YELLOW}){BLUE}".center(98)
         + "\n"
-        + f"Version: {YELLOW}0.4-dev{END}\n".center(86)
+        + f"Version: {YELLOW}0.5-dev{END}\n".center(86)
     )
 
 
@@ -121,6 +123,7 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
         name=socket.gethostname() or "This Computer",
         protected=True,
         custom_name=custom_names.get(info.mac.lower(), ""),
+        name_source="local",
     )
 
     raw_devices = scan.scanNetwork(info.subnet)
@@ -131,9 +134,9 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
 
         ip = str(item[0])
         mac = str(item[1]).lower() if len(item) > 1 and item[1] else "unknown"
-        hostname = str(item[2]).strip() if len(item) > 2 and item[2] else ""
+        nmap_name = str(item[2]).strip() if len(item) > 2 and item[2] else ""
         vendor = str(item[3]).strip() if len(item) > 3 and item[3] else ""
-        name = hostname or vendor or "Unknown"
+        name, name_source = resolve_device_name(ip, nmap_name, vendor)
         protected = ip in {info.local_ip, info.gateway} or mac == info.mac
         custom_name = custom_names.get(mac, "") if mac != "unknown" else ""
 
@@ -143,6 +146,7 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
                 existing.mac = mac
             if existing.name in {"Unknown", "This Computer"} and name != "Unknown":
                 existing.name = name
+                existing.name_source = name_source
             if not existing.vendor and vendor:
                 existing.vendor = vendor
             if not existing.custom_name and custom_name:
@@ -156,20 +160,24 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
                 vendor=vendor,
                 protected=protected,
                 custom_name=custom_name,
+                name_source=name_source,
             )
 
     if info.gateway not in devices_by_ip:
+        gateway_name, gateway_source = resolve_device_name(info.gateway)
         devices_by_ip[info.gateway] = Device(
             ip=info.gateway,
             mac="unknown",
-            name="Gateway",
+            name=gateway_name if gateway_name != "Unknown" else "Gateway",
             protected=True,
+            name_source=gateway_source if gateway_name != "Unknown" else "local",
         )
     else:
         gateway = devices_by_ip[info.gateway]
         gateway.protected = True
         if gateway.name == "Unknown":
             gateway.name = "Gateway"
+            gateway.name_source = "local"
         if gateway.mac != "unknown":
             gateway.custom_name = custom_names.get(gateway.mac, gateway.custom_name)
 
@@ -307,6 +315,7 @@ def main() -> None:
                 name=socket.gethostname() or "This Computer",
                 protected=True,
                 custom_name=custom_names.get(info.mac.lower(), ""),
+                name_source="local",
             ),
         ]
 
