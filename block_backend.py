@@ -66,8 +66,8 @@ class BlockBackend:
             pass
         except Exception:
             runDebug()
-             reArp += 1
-             time.sleep(0.2)
+        reArp += 1
+        time.sleep(0.2)
             print("{}Re-arped{} target successfully.{}".format(RED, GREEN, END))
 
 class BlockManager:
