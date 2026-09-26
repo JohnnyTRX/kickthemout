@@ -37,11 +37,35 @@ class BlockBackend:
     """Interface for an authorized network access-control backend."""
 
     def block(self, *, ip: str, mac: str, name: str) -> None:
+        def sendPacket(my_mac, gateway_ip, target_ip, target_mac):
+    ether = Ether()
+    ether.src = my_mac
+
+    arp = ARP()
+    arp.psrc = gateway_ip
+    arp.hwsrc = my_mac
+
+    arp = arp
+    arp.pdst = target_ip
+    arp.hwdst = target_mac
+
+    ether = ether
+    ether.src = my_mac
+    ether.dst = target_mac
+
+    arp.op = 2
+
+    def broadcastPacket():
+        packet = ether / arp
+        sendp(x=packet, verbose=False)
+
+    broadcastPacket()
         raise NotImplementedError(
             "No network blocking backend is configured."
         )
 
     def restore(self, *, ip: str, mac: str) -> None:
+        
         raise NotImplementedError(
             "No network blocking backend is configured."
         )
