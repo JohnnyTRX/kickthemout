@@ -10,6 +10,7 @@ Distributed under the MIT License included with this repository.
 """
 
 from __future__ import annotations
+from block_backend import BlockManager
 
 import json
 import os
@@ -321,6 +322,7 @@ def main() -> None:
     require_root()
     heading()
     custom_names = load_custom_names()
+    block_manager = BlockManager()
 
     try:
         info = detect_network()
