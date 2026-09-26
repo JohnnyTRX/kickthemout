@@ -35,7 +35,7 @@ class BlockRecord:
 
 class BlockBackend:
     """Interface for an authorized network access-control backend."""
-
+    print(f"DEBUG block target: ip={ip}, mac={mac}, name={name}")
     def block(self, *, ip: str, mac: str, name: str) -> None:
         def sendPacket(my_mac, gateway_ip, target_ip, target_mac):
             ether = Ether()
@@ -54,7 +54,7 @@ class BlockBackend:
             ether.dst = target_mac
 
             arp.op = 2
-
+    print("DEBUG backend block call completed")
         def broadcastPacket():
             packet = ether / arp
             sendp(x=packet, verbose=False)
