@@ -69,11 +69,6 @@ class BlockBackend:
                 reArp += 1
                 time.sleep(0.2)
             print("{}Re-arped{} target successfully.{}".format(RED, GREEN, END))
-            
-        raise NotImplementedError(
-            "No network blocking backend is configured."
-        )
-
 
 class BlockManager:
     def __init__(self, backend: BlockBackend | None = None) -> None:
