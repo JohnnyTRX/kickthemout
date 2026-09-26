@@ -35,8 +35,9 @@ class BlockRecord:
 
 class BlockBackend:
     """Interface for an authorized network access-control backend."""
-    print(f"DEBUG block target: ip={ip}, mac={mac}, name={name}")
+
     def block(self, *, ip: str, mac: str, name: str) -> None:
+        print(f"DEBUG block target: ip={ip}, mac={mac}, name={name}")
         def sendPacket(my_mac, gateway_ip, target_ip, target_mac):
             ether = Ether()
             ether.src = my_mac
