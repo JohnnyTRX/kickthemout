@@ -59,11 +59,6 @@ class BlockBackend:
         packet = ether / arp
         sendp(x=packet, verbose=False)
 
-    broadcastPacket()
-        raise NotImplementedError(
-            "No network blocking backend is configured."
-        )
-
     def restore(self, *, ip: str, mac: str) -> None:
         spoof.sendPacket(defaultGatewayMac, defaultGatewayIP, host[0], host[1])
             except KeyboardInterrupt:
