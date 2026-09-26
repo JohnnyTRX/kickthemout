@@ -15,6 +15,7 @@ The original kickthemout.py remains untouched while this entry point is tested.
 from __future__ import annotations
 
 import os
+import socket
 import sys
 from dataclasses import dataclass
 from time import sleep
@@ -36,6 +37,8 @@ END = "\033[0m"
 class Device:
     ip: str
     mac: str
+    name: str = "Unknown"
+    vendor: str = ""
     protected: bool = False
 
 
@@ -66,7 +69,7 @@ def heading() -> None:
         + "\n"
         + f"{YELLOW}Modern Linux Fork ({RED}KickThemOut{YELLOW}){BLUE}".center(98)
         + "\n"
-        + f"Version: {YELLOW}0.2-dev{END}\n".center(86)
+        + f"Version: {YELLOW}0.3-dev{END}\n".center(86)
     )
 
 
@@ -84,10 +87,10 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
 
     devices_by_ip: dict[str, Device] = {}
 
-    # Always include this computer, even if Nmap omits a MAC address for it.
     devices_by_ip[info.local_ip] = Device(
         ip=info.local_ip,
         mac=info.mac,
+        name=socket.gethostname() or "This Computer",
         protected=True,
     )
 
@@ -96,31 +99,43 @@ def discover_devices(info: NetworkInfo) -> list[Device]:
     for item in raw_devices:
         if not item:
             continue
+
         ip = str(item[0])
         mac = str(item[1]).lower() if len(item) > 1 and item[1] else "unknown"
+        hostname = str(item[2]).strip() if len(item) > 2 and item[2] else ""
+        vendor = str(item[3]).strip() if len(item) > 3 and item[3] else ""
+        name = hostname or vendor or "Unknown"
         protected = ip in {info.local_ip, info.gateway} or mac == info.mac
 
         existing = devices_by_ip.get(ip)
         if existing:
-            # Prefer a discovered MAC over an unknown placeholder, but never
-            # remove protection from the gateway or this computer.
             if existing.mac == "unknown" and mac != "unknown":
                 existing.mac = mac
+            if existing.name in {"Unknown", "This Computer"} and name != "Unknown":
+                existing.name = name
+            if not existing.vendor and vendor:
+                existing.vendor = vendor
             existing.protected = existing.protected or protected
         else:
-            devices_by_ip[ip] = Device(ip=ip, mac=mac, protected=protected)
+            devices_by_ip[ip] = Device(
+                ip=ip,
+                mac=mac,
+                name=name,
+                vendor=vendor,
+                protected=protected,
+            )
 
-    # Always include the gateway and clearly mark it as protected. If the scan
-    # found its MAC address, keep it; otherwise show "unknown" instead of
-    # hiding the gateway from the device list.
     if info.gateway not in devices_by_ip:
         devices_by_ip[info.gateway] = Device(
             ip=info.gateway,
             mac="unknown",
+            name="Gateway",
             protected=True,
         )
     else:
         devices_by_ip[info.gateway].protected = True
+        if devices_by_ip[info.gateway].name == "Unknown":
+            devices_by_ip[info.gateway].name = "Gateway"
 
     devices = list(devices_by_ip.values())
     devices.sort(key=lambda d: tuple(int(part) for part in d.ip.split(".")))
@@ -134,6 +149,8 @@ def print_devices(devices: list[Device], info: NetworkInfo) -> None:
         return
 
     print(f"\n{BLUE}Discovered devices:{END}\n")
+    print(f"\t{WHITE}{'#':<4} {'IP':<16} {'MAC':<19} {'NAME / VENDOR'}{END}")
+
     for index, device in enumerate(devices, start=1):
         labels = []
         if device.ip == info.gateway:
@@ -142,10 +159,15 @@ def print_devices(devices: list[Device], info: NetworkInfo) -> None:
             labels.append("THIS COMPUTER")
         if device.protected:
             labels.append("PROTECTED")
+
         suffix = f" {YELLOW}[{' / '.join(labels)}]{END}" if labels else ""
+        display_name = device.name
+        if device.vendor and device.vendor.lower() != device.name.lower():
+            display_name = f"{device.name} ({device.vendor})"
+
         print(
             f"\t{YELLOW}[{RED}{index}{YELLOW}]{WHITE} "
-            f"{device.ip:<15} {device.mac}{suffix}"
+            f"{device.ip:<16} {device.mac:<19} {display_name}{suffix}"
         )
     print(END)
 
@@ -185,8 +207,13 @@ def main() -> None:
     except Exception as exc:
         print(f"{RED}ERROR: Network scanning failed: {GREEN}{exc}{END}\n")
         devices = [
-            Device(ip=info.gateway, mac="unknown", protected=True),
-            Device(ip=info.local_ip, mac=info.mac, protected=True),
+            Device(ip=info.gateway, mac="unknown", name="Gateway", protected=True),
+            Device(
+                ip=info.local_ip,
+                mac=info.mac,
+                name=socket.gethostname() or "This Computer",
+                protected=True,
+            ),
         ]
 
     while True:
@@ -195,8 +222,6 @@ def main() -> None:
 
         if choice == "1":
             try:
-                # Refresh network information as well, because Wi-Fi/interface
-                # details may have changed since launch.
                 info = detect_network()
                 print_network(info)
                 devices = discover_devices(info)
