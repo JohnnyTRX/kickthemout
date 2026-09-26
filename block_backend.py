@@ -62,7 +62,7 @@ class BlockBackend:
     def restore(self, *, ip: str, mac: str) -> None:
         spoof.sendPacket(defaultGatewayMac, defaultGatewayIP, host[0], host[1])
             except KeyboardInterrupt:
-                pass
+            pass
             except:
                 runDebug()
             reArp += 1
