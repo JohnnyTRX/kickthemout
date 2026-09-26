@@ -20,6 +20,7 @@ from pathlib import Path
 from time import sleep
 
 import scan
+from device_classifier import classify_device
 from device_resolver import resolve_device_name
 from network_info import NetworkDiscoveryError, NetworkInfo, detect_network
 
@@ -44,6 +45,7 @@ class Device:
     protected: bool = False
     custom_name: str = ""
     name_source: str = "unknown"
+    device_type: str = "UNKNOWN"
 
 
 def require_root() -> None:
@@ -73,7 +75,7 @@ def heading() -> None:
         + "\n"
         + f"{YELLOW}Modern Linux Fork ({RED}KickThemOut{YELLOW}){BLUE}".center(98)
         + "\n"
-        + f"Version: {YELLOW}0.5-dev{END}\n".center(86)
+        + f"Version: {YELLOW}0.6-dev{END}\n".center(86)
     )
 
 
@@ -117,13 +119,16 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
 
     devices_by_ip: dict[str, Device] = {}
 
+    local_name = socket.gethostname() or "This Computer"
+    local_custom = custom_names.get(info.mac.lower(), "")
     devices_by_ip[info.local_ip] = Device(
         ip=info.local_ip,
         mac=info.mac,
-        name=socket.gethostname() or "This Computer",
+        name=local_name,
         protected=True,
-        custom_name=custom_names.get(info.mac.lower(), ""),
+        custom_name=local_custom,
         name_source="local",
+        device_type="COMPUTER",
     )
 
     raw_devices = scan.scanNetwork(info.subnet)
@@ -139,6 +144,7 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
         name, name_source = resolve_device_name(ip, nmap_name, vendor)
         protected = ip in {info.local_ip, info.gateway} or mac == info.mac
         custom_name = custom_names.get(mac, "") if mac != "unknown" else ""
+        device_type = classify_device(name=name, vendor=vendor, custom_name=custom_name)
 
         existing = devices_by_ip.get(ip)
         if existing:
@@ -152,6 +158,13 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
             if not existing.custom_name and custom_name:
                 existing.custom_name = custom_name
             existing.protected = existing.protected or protected
+            existing.device_type = classify_device(
+                name=existing.name,
+                vendor=existing.vendor,
+                custom_name=existing.custom_name,
+            )
+            if existing.ip == info.local_ip or existing.mac == info.mac:
+                existing.device_type = "COMPUTER"
         else:
             devices_by_ip[ip] = Device(
                 ip=ip,
@@ -161,6 +174,7 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
                 protected=protected,
                 custom_name=custom_name,
                 name_source=name_source,
+                device_type=device_type,
             )
 
     if info.gateway not in devices_by_ip:
@@ -171,10 +185,12 @@ def discover_devices(info: NetworkInfo, custom_names: dict[str, str]) -> list[De
             name=gateway_name if gateway_name != "Unknown" else "Gateway",
             protected=True,
             name_source=gateway_source if gateway_name != "Unknown" else "local",
+            device_type="ROUTER",
         )
     else:
         gateway = devices_by_ip[info.gateway]
         gateway.protected = True
+        gateway.device_type = "ROUTER"
         if gateway.name == "Unknown":
             gateway.name = "Gateway"
             gateway.name_source = "local"
@@ -207,7 +223,7 @@ def print_devices(devices: list[Device], info: NetworkInfo) -> None:
         return
 
     print(f"\n{BLUE}Discovered devices:{END}\n")
-    print(f"\t{WHITE}{'#':<4} {'IP':<16} {'MAC':<19} {'NAME / VENDOR'}{END}")
+    print(f"\t{WHITE}{'#':<4} {'IP':<16} {'MAC':<19} {'TYPE':<13} {'NAME / VENDOR'}{END}")
 
     for index, device in enumerate(devices, start=1):
         labels = []
@@ -221,7 +237,8 @@ def print_devices(devices: list[Device], info: NetworkInfo) -> None:
         suffix = f" {YELLOW}[{' / '.join(labels)}]{END}" if labels else ""
         print(
             f"\t{YELLOW}[{RED}{index}{YELLOW}]{WHITE} "
-            f"{device.ip:<16} {device.mac:<19} {display_name(device)}{suffix}"
+            f"{device.ip:<16} {device.mac:<19} {device.device_type:<13} "
+            f"{display_name(device)}{suffix}"
         )
     print(END)
 
@@ -262,11 +279,21 @@ def manage_device_names(
     if new_name:
         custom_names[mac] = new_name
         device.custom_name = new_name
+        device.device_type = classify_device(
+            name=device.name, vendor=device.vendor, custom_name=device.custom_name
+        )
+        if device.ip == info.local_ip or device.mac == info.mac:
+            device.device_type = "COMPUTER"
         save_custom_names(custom_names)
         print(f"\n{GREEN}Saved device name: {new_name}{END}\n")
     else:
         custom_names.pop(mac, None)
         device.custom_name = ""
+        device.device_type = classify_device(name=device.name, vendor=device.vendor)
+        if device.ip == info.local_ip or device.mac == info.mac:
+            device.device_type = "COMPUTER"
+        if device.ip == info.gateway:
+            device.device_type = "ROUTER"
         save_custom_names(custom_names)
         print(f"\n{GREEN}Saved custom name removed.{END}\n")
 
@@ -308,7 +335,7 @@ def main() -> None:
     except Exception as exc:
         print(f"{RED}ERROR: Network scanning failed: {GREEN}{exc}{END}\n")
         devices = [
-            Device(ip=info.gateway, mac="unknown", name="Gateway", protected=True),
+            Device(ip=info.gateway, mac="unknown", name="Gateway", protected=True, device_type="ROUTER"),
             Device(
                 ip=info.local_ip,
                 mac=info.mac,
@@ -316,6 +343,7 @@ def main() -> None:
                 protected=True,
                 custom_name=custom_names.get(info.mac.lower(), ""),
                 name_source="local",
+                device_type="COMPUTER",
             ),
         ]
 
