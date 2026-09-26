@@ -304,7 +304,7 @@ def option_banner() -> None:
     sleep(0.1)
     print(f"\t{YELLOW}[{RED}1{YELLOW}]{WHITE} Rescan Devices")
     print(f"\t{YELLOW}[{RED}2{YELLOW}]{WHITE} View Devices")
-    print(f"\t{YELLOW}[{RED}3{YELLOW}]{WHITE} Block Device {YELLOW}[coming next]{WHITE}")
+    print(f"\t{YELLOW}[{RED}3{YELLOW}]{WHITE} Block Device")
     print(f"\t{YELLOW}[{RED}4{YELLOW}]{WHITE} Timed Block {YELLOW}[coming next]{WHITE}")
     print(f"\t{YELLOW}[{RED}5{YELLOW}]{WHITE} Block Until Time {YELLOW}[coming next]{WHITE}")
     print(f"\t{YELLOW}[{RED}6{YELLOW}]{WHITE} View Blocked Devices {YELLOW}[coming next]{WHITE}")
@@ -369,8 +369,38 @@ def main() -> None:
         elif choice == "9":
             manage_device_names(devices, info, custom_names)
 
-        elif choice in {"3", "4", "5", "6", "7", "8"}:
-            print(f"\n{YELLOW}That feature is planned for the next milestone.{END}\n")
+        elif choice == "3":
+            print_devices(devices, info)
+        
+            raw = input(
+                f"{BLUE}Enter device number, or press Enter to cancel{WHITE}> {END}"
+            ).strip()
+        
+            if not raw:
+                continue
+        
+            try:
+                index = int(raw) - 1
+                device = devices[index]
+            except (ValueError, IndexError):
+                print(f"\n{RED}ERROR: Invalid device number.{END}\n")
+                continue
+        
+            valid, reason = block_manager.validate_target(device, info)
+        
+            if not valid:
+                print(f"\n{RED}{reason}{END}\n")
+                continue
+        
+            success, message = block_manager.block(device, info)
+        
+            if success:
+                print(f"\n{GREEN}{message}{END}\n")
+            else:
+                print(f"\n{RED}{message}{END}\n")
+
+elif choice in {"4", "5", "6", "7", "8"}:
+    print(f"\n{YELLOW}That feature is planned for the next milestone.{END}\n")
 
         elif choice in {"0", "e", "exit", "q", "quit"}:
             print(f"\n{GREEN}Thanks for dropping by. Catch ya later!{END}\n")
