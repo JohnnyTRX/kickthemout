@@ -55,7 +55,7 @@ class BlockBackend:
             ether.dst = target_mac
 
             arp.op = 2
-    print("DEBUG backend block call completed")
+        print("DEBUG backend block call completed")
         def broadcastPacket():
             packet = ether / arp
             sendp(x=packet, verbose=False)
